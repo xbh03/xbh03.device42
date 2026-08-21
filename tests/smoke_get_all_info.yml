@@ -1,0 +1,651 @@
+---
+- name: Smoke test all Device42 info modules
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  ignore_errors: true
+
+  vars:
+    d42_host: "{{ lookup('env', 'D42_HOST') }}"
+    d42_client_key_raw: "{{ lookup('env', 'D42_CLIENT_KEY') | default('', true) }}"
+    d42_client_secret_raw: "{{ lookup('env', 'D42_CLIENT_SECRET') | default('', true) }}"
+    d42_userid_raw: "{{ lookup('env', 'D42_USERID') | default('', true) }}"
+    d42_password_raw: "{{ lookup('env', 'D42_PASSWORD') | default('', true) }}"
+    d42_proto: "{{ lookup('env', 'D42_PROTO') | default('https', true) }}"
+    d42_port: "{{ lookup('env', 'D42_PORT') | default(443, true) | int }}"
+    d42_sslverify: "{{ lookup('env', 'D42_SSLVERIFY') | default(false, true) | bool }}"
+    d42_auth_mode: "{{ 'basic' if (d42_userid_raw | length > 0 and d42_password_raw | length > 0) else 'token' }}"
+    d42_client_key: "{{ d42_client_key_raw if d42_auth_mode == 'token' else '' }}"
+    d42_client_secret: "{{ d42_client_secret_raw if d42_auth_mode == 'token' else '' }}"
+    d42_userid: "{{ d42_userid_raw if d42_auth_mode == 'basic' else '' }}"
+    d42_password: "{{ d42_password_raw if d42_auth_mode == 'basic' else '' }}"
+
+  tasks:
+    - name: Show selected auth mode
+      ansible.builtin.debug:
+        msg:
+          - "d42_auth_mode={{ d42_auth_mode }}"
+          - "has_client_pair={{ (d42_client_key_raw | length > 0 and d42_client_secret_raw | length > 0) | ternary('yes', 'no') }}"
+          - "has_user_pair={{ (d42_userid_raw | length > 0 and d42_password_raw | length > 0) | ternary('yes', 'no') }}"
+
+    - name: Fail if both auth pairs are set
+      ansible.builtin.assert:
+        that:
+          - not ((d42_client_key_raw | length > 0 and d42_client_secret_raw | length > 0) and (d42_userid_raw | length > 0 and d42_password_raw | length > 0))
+        fail_msg: Do not set both token and basic credentials at the same time. Clear either D42_CLIENT_KEY+D42_CLIENT_SECRET or D42_USERID+D42_PASSWORD.
+      ignore_errors: false
+
+    - name: Validate required environment variables
+      ansible.builtin.assert:
+        that:
+          - d42_host | length > 0
+          - (d42_client_key_raw | length > 0 and d42_client_secret_raw | length > 0) or (d42_userid_raw | length > 0 and d42_password_raw | length > 0)
+        fail_msg: Set D42_HOST and either D42_CLIENT_KEY+D42_CLIENT_SECRET or D42_USERID+D42_PASSWORD before running this playbook.
+      ignore_errors: false
+
+    - name: Get API client keys
+      xbh03.device42.admin_users_groups.d42_api_clientkeys_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        debug: true
+      when: d42_auth_mode == 'token'
+
+    - name: Get API clients
+      xbh03.device42.admin_users_groups.d42_api_clients_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+      when: d42_auth_mode == 'token'
+
+    - name: Get admin groups
+      xbh03.device42.admin_users_groups.d42_api_admingroups_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        include_cols: permissions
+      when: d42_auth_mode == 'token'
+
+    - name: Get admin users
+      xbh03.device42.admin_users_groups.d42_api_adminusers_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        include_cols: auth_type,is_active,is_staff,username,id,email,groups,is_superuser,last_login,date_joined,password_doesnt_expire,last_name,first_name,invalid_login_attempts
+
+    - name: Get application components
+      xbh03.device42.application_components.d42_api_appcomps_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        include_cols: custom_fields,depends_on,dependent,device,category,tags
+
+    - name: Get application component templates
+      xbh03.device42.application_components.d42_api_appcomptemplate_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get application group calculation rules
+      xbh03.device42.application_groups.d42_api_appgroup_calc_rule_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get application group calculation templates
+      xbh03.device42.application_groups.d42_api_appgroup_calc_template_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get asset and device lifecycle events
+      xbh03.device42.asset_device_lifecycle.d42_api_asset_device_lifecycle_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get assets
+      xbh03.device42.assets.d42_api_assets_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        debug: true
+        limit: 10
+        offset: 0
+        fetch_all: false
+      register: d42_assets_info
+
+    - name: Get cables
+      xbh03.device42.cables.d42_api_cables_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get specific asset
+      xbh03.device42.assets.d42_api_assets_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        asset_id: "{{ d42_assets_info.api_assets.assets[0].asset_id }}"
+      when:
+        - d42_assets_info.api_assets is defined
+        - d42_assets_info.api_assets.assets is defined
+        - d42_assets_info.api_assets.assets | length > 0
+
+    - name: Get devices
+      xbh03.device42.devices.d42_api_devices_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+      register: d42_devices_info
+
+    - name: Get specific device
+      xbh03.device42.devices.d42_api_devices_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        device_id: "{{ d42_devices_info.api_devices.devices[0].device_id }}"
+        include_cols: name,device_id,type_id,type,serial_no,asset_no,uuid,notes,last_updated,first_added,objectcategory_id,objectcategory,service_level_id,service_level,customer_id,customer,customers,in_service,virtual_host,blade_chassis,device_url,hardware_id,hardware,physicalsubtype_id,physicalsubtype,blade_slot_no,host_chassis_device_id,chassis_slot_id,device_virtual_host_id,device_cluster_id,additional_location_info,rack_id,start_at,orientation_id,orientation,xpos,where_id,where,reversed,virtualsubtype_id,virtualsubtype,datastores,data_center,os_id,os_name,os_version,os_version_no,os_architecture_id,os_architecture,total_cpus,core_per_cpu,threads_per_core,cpu_speed,hz_id,hz,ram,ram_size_type_id,ram_size_type,hard_disk_count,hard_disk_size,hard_disk_size_type_id,hard_disk_size_type,hw_sw_raid,hw_sw_raid_id,raid_type,raid_type_id,building_id,calculated_building_id,storage_room,storage_room_id,aliases,nonauthoritativealiases,custom_fields,tags
+      when:
+        - d42_devices_info.api_devices is defined
+        - d42_devices_info.api_devices.devices is defined
+        - d42_devices_info.api_devices.devices | length > 0
+
+    - name: Get device mountpoints
+      xbh03.device42.devices.d42_api_devices_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: mountpoints
+        device_id: "{{ d42_devices_info.api_devices.devices[0].device_id }}"
+      when:
+        - d42_devices_info.api_devices is defined
+        - d42_devices_info.api_devices.devices is defined
+        - d42_devices_info.api_devices.devices | length > 0
+
+    - name: Get health status
+      xbh03.device42.health_status.d42_api_healthstatus_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        sslverify: "{{ d42_sslverify }}"
+        full: "no"
+
+    - name: Get backup schedules
+      xbh03.device42.backup_schedules.d42_api_backup_schedules_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: 4343
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get buildings
+      xbh03.device42.buildings.d42_api_buildings_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+      register: d42_buildings_info
+
+    - name: Get specific building
+      xbh03.device42.buildings.d42_api_buildings_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        building_id: "{{ d42_buildings_info.api_buildings.buildings[0].building_id }}"
+      when:
+        - d42_buildings_info.api_buildings is defined
+        - d42_buildings_info.api_buildings.buildings is defined
+        - d42_buildings_info.api_buildings.buildings | length > 0
+
+    - name: Get rooms
+      xbh03.device42.rooms.d42_api_rooms_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+      register: d42_rooms_info
+
+    - name: Get specific room
+      xbh03.device42.rooms.d42_api_rooms_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        room_id: "{{ d42_rooms_info.api_rooms.rooms[0].room_id }}"
+      when:
+        - d42_rooms_info.api_rooms is defined
+        - d42_rooms_info.api_rooms.rooms is defined
+        - d42_rooms_info.api_rooms.rooms | length > 0
+
+    - name: Get certificates
+      xbh03.device42.certificates.d42_api_certificates_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+      register: d42_certificates_info
+
+    - name: Get custom fields
+      xbh03.device42.custom_fields.d42_api_custom_fields_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        object_name: device
+
+    - name: Get specific certificate
+      xbh03.device42.certificates.d42_api_certificates_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        certificate_id: "{{ d42_certificates_info.api_certificates.certificate_details[0].id }}"
+      when:
+        - d42_certificates_info.api_certificates is defined
+        - d42_certificates_info.api_certificates.certificate_details is defined
+        - d42_certificates_info.api_certificates.certificate_details | length > 0
+
+    - name: Get operating systems
+      xbh03.device42.operating_systems.d42_api_operatingsystems_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+      register: d42_operating_systems_info
+
+    - name: Get specific operating system
+      xbh03.device42.operating_systems.d42_api_operatingsystems_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        operating_system_id: "{{ d42_operating_systems_info.operating_systems.operatingsystems[0].id }}"
+      when:
+        - d42_operating_systems_info.operating_systems is defined
+        - d42_operating_systems_info.operating_systems.operatingsystems is defined
+        - d42_operating_systems_info.operating_systems.operatingsystems | length > 0
+
+    - name: Get OS EOL/EOS
+      xbh03.device42.operating_systems.d42_api_eoleos_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get hardware models
+      xbh03.device42.hardware_models.d42_api_hardware_models_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+      register: d42_hardware_models_info
+
+    - name: Get specific hardware model
+      xbh03.device42.hardware_models.d42_api_hardware_models_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        hardware_id: "{{ d42_hardware_models_info.api_hardware_models.hardware_models[0].hardware_id }}"
+      when:
+        - d42_hardware_models_info.api_hardware_models is defined
+        - d42_hardware_models_info.api_hardware_models.hardware_models is defined
+        - d42_hardware_models_info.api_hardware_models.hardware_models | length > 0
+
+    - name: Get racks
+      xbh03.device42.racks.d42_api_racks_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get services
+      xbh03.device42.services.d42_api_services_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get software
+      xbh03.device42.software.d42_api_software_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get service levels
+      xbh03.device42.service_levels.d42_api_service_levels_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get vendors
+      xbh03.device42.vendors.d42_api_vendors_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get tags
+      xbh03.device42.tags.d42_api_tags_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get telco circuits
+      xbh03.device42.telco_circuits.d42_api_telco_circuits_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get DNS zones
+      xbh03.device42.ipam.dns.d42_api_ipam_dns_zones_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get DNS records
+      xbh03.device42.ipam.dns.d42_api_ipam_dns_records_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get IPs
+      xbh03.device42.ipam.ips.d42_api_ipam_ips_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+
+    - name: Get subnets
+      xbh03.device42.ipam.subnets.d42_api_ipam_subnets_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false
+      register: d42_subnets_info
+
+    - name: Get specific subnet
+      xbh03.device42.ipam.subnets.d42_api_ipam_subnets_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        subnet_id: "{{ d42_subnets_info.ipam_subnets.subnets[0].subnet_id }}"
+      when:
+        - d42_subnets_info.ipam_subnets is defined
+        - d42_subnets_info.ipam_subnets.subnets is defined
+        - d42_subnets_info.ipam_subnets.subnets | length > 0
+
+    - name: Get VLANs
+      xbh03.device42.ipam.vlans.d42_api_ipam_vlans_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+      register: d42_vlans_info
+
+    - name: Get specific VLAN
+      xbh03.device42.ipam.vlans.d42_api_ipam_vlans_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        query_type: specific
+        vlan_id: "{{ d42_vlans_info.ipam_vlans.vlans[0].vlan_id }}"
+      when:
+        - d42_vlans_info.ipam_vlans is defined
+        - d42_vlans_info.ipam_vlans.vlans is defined
+        - d42_vlans_info.ipam_vlans.vlans | length > 0
+
+    - name: Get switch templates
+      xbh03.device42.ipam.switches.d42_api_ipam_switch_templates_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+
+    - name: Get switch ports
+      xbh03.device42.ipam.switches.d42_api_ipam_switchports_info:
+        host: "{{ d42_host }}"
+        client_key: "{{ d42_client_key if d42_client_key | length > 0 else omit }}"
+        client_secret_key: "{{ d42_client_secret if d42_client_secret | length > 0 else omit }}"
+        userid: "{{ d42_userid if d42_userid | length > 0 else omit }}"
+        password: "{{ d42_password if d42_password | length > 0 else omit }}"
+        proto: "{{ d42_proto }}"
+        port: "{{ d42_port }}"
+        sslverify: "{{ d42_sslverify }}"
+        limit: 10
+        offset: 0
+        fetch_all: false

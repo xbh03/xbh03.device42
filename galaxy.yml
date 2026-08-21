@@ -1,0 +1,12 @@
+namespace: xbh03
+name: device42
+version: 0.2.4
+readme: README.md
+
+authors:
+    - Francesco Zoino <f.zoino@atdatenschutz.ch>
+
+description: Ansible collection for Device42
+license:
+    - GPL-3.0-or-later
+repository: https://github.com/xbh03/xbh03.device42
